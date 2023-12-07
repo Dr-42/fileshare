@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use axum::{
-    body::{self, Full},
-    extract::DefaultBodyLimit,
+    body::{self, Body, Full},
+    extract::{DefaultBodyLimit, Query, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -23,11 +24,15 @@ struct File {
 #[derive(Serialize, Deserialize)]
 struct List {
     files: Vec<File>,
+    running_id: u64,
 }
 
 impl List {
     fn new() -> Self {
-        Self { files: vec![] }
+        Self {
+            files: vec![],
+            running_id: 0,
+        }
     }
 
     fn load(path: &str) -> Result<Self> {
@@ -39,7 +44,10 @@ impl List {
         self.files.push(file);
     }
 
-    fn remove(&mut self, id: u64) {
+    async fn remove(&mut self, id: u64) {
+        async_fs::remove_file(format!("files/{}", self.files[id as usize].name))
+            .await
+            .unwrap();
         self.files.retain(|f| f.id != id);
     }
 }
@@ -57,15 +65,20 @@ async fn main() -> Result<()> {
     if !std::path::Path::new("list.json").exists() {
         std::fs::write("list.json", serde_json::to_string(&List::new())?)?;
     }
-    let state = Arc::new(tokio::sync::Mutex::new(List::load("list.json")?));
+    let state = Arc::new(Mutex::new(List::load("list.json")?));
+    if !std::path::Path::new("files").exists() {
+        async_fs::create_dir("files").await?;
+    }
 
     let routes = Router::new()
         .route("/", get(index))
+        .route("/list", get(list))
         .route("/index.js", get(index_js))
         .route("/index.css", get(index_css))
         .route("/favicon.png", get(favicon))
         .route("/upload", post(upload))
-        .route("/file/:key", get(file))
+        .route("/remove", post(remove))
+        .route("/file", get(file))
         .layer(CorsLayer::permissive())
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024));
     let router_service = routes.with_state(state).into_make_service();
@@ -80,12 +93,147 @@ async fn index() -> Html<String> {
     Html(file.to_string())
 }
 
-async fn upload() -> impl IntoResponse {
-    todo!()
+async fn list(State(state): State<Arc<Mutex<List>>>) -> impl IntoResponse {
+    let state = state.try_lock();
+    if state.is_err() {
+        return Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::empty())
+            .unwrap();
+    }
+    let state = state.unwrap();
+    let list = serde_json::to_string(&*state).unwrap();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_str("application/json").unwrap(),
+        )
+        .body(Body::from(list))
+        .unwrap()
 }
 
-async fn file() -> impl IntoResponse {
-    todo!()
+#[derive(Serialize, Deserialize)]
+struct Upload {
+    name: String,
+    data: String,
+}
+
+#[axum_macros::debug_handler]
+async fn upload(State(state): State<Arc<Mutex<List>>>, body: Json<Upload>) -> impl IntoResponse {
+    let data = &body.data;
+    let data = data.split(',').nth(1).unwrap();
+    // Decode Base64 data
+    use base64::{engine::general_purpose, Engine as _};
+
+    let bytes = general_purpose::STANDARD.decode(data).unwrap();
+    let length = bytes.len();
+    let state: Arc<Mutex<List>> = Arc::clone(&state);
+    let handle = tokio::spawn(async move {
+        let state = state.try_lock();
+        if state.is_err() {
+            Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::empty())
+                .unwrap();
+        }
+        let mut state = state.unwrap();
+        async_fs::write(format!("files/{}", body.name), bytes)
+            .await
+            .unwrap();
+        let id = state.running_id;
+        state.add(File {
+            id,
+            name: body.name.clone(),
+            size: length as u64,
+        });
+        state.running_id += 1;
+        std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
+    });
+
+    handle.await.unwrap();
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[derive(Deserialize)]
+struct FileQuery {
+    id: u64,
+}
+
+#[axum_macros::debug_handler]
+async fn remove(
+    State(state): State<Arc<Mutex<List>>>,
+    query: Query<FileQuery>,
+) -> impl IntoResponse {
+    let state: Arc<Mutex<List>> = Arc::clone(&state);
+    let handle = tokio::spawn(async move {
+        let state = state.try_lock();
+        if state.is_err() {
+            Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::empty())
+                .unwrap();
+        }
+        let mut state = state.unwrap();
+        state.remove(query.id).await;
+        std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
+    });
+
+    handle.await.unwrap();
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn file(State(state): State<Arc<Mutex<List>>>, query: Query<FileQuery>) -> impl IntoResponse {
+    let state = state.try_lock();
+    if state.is_err() {
+        return Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::empty())
+            .unwrap();
+    }
+    let state = state.unwrap();
+    let file = state.files.iter().find(|f| f.id == query.id);
+    if file.is_none() {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+    }
+    let file = file.unwrap();
+    let path = format!("files/{}", file.name);
+    match async_fs::read(path).await {
+        Ok(file_data) => {
+            let content_length = file_data.len().to_string();
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header(
+                    header::CONTENT_TYPE,
+                    header::HeaderValue::from_str("application/octet-stream").unwrap(),
+                )
+                .header(
+                    header::CONTENT_LENGTH,
+                    header::HeaderValue::from_str(&content_length).unwrap(),
+                )
+                .body(Body::from(file_data))
+                .unwrap();
+
+            println!("File downloaded successfully. Size: {}", content_length);
+            response
+        }
+        Err(err) => {
+            eprintln!("Error reading file: {:?}", err);
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()
+        }
+    }
 }
 
 async fn index_js() -> impl IntoResponse {
