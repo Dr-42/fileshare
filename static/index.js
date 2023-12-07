@@ -8,6 +8,9 @@ async function reload() {
 		upload.onchange = () => {
 			let file = upload.files[0];
 			let name = file.name;
+			let progress_dialogue = document.getElementById('progress_dialogue')
+			progress_dialogue.innerHTML = 'Uploading...'
+			progress_dialogue.showModal()
 			let Reader = new FileReader();
 			Reader.readAsDataURL(file);
 			Reader.onload = () => {
@@ -21,7 +24,11 @@ async function reload() {
 					headers: { 'Content-Type': 'application/json' },
 					body: json_data
 				}).then(() => {
-					reload()
+					progress_dialogue.innerHTML = 'Upload complete!'
+					progress_dialogue.addEventListener('click', () => {
+						progress_dialogue.close()
+						reload()
+					})
 				})
 			}
 		}
