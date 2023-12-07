@@ -28,12 +28,20 @@ async function reload() {
 			}
 			list.appendChild(upload)
 			console.log(data)
+			let content = document.createElement('div')
+			content.className = 'holder'
 			data.files.forEach(item => {
-				let li = document.createElement('li')
-				li.innerHTML = item.name
-				list.appendChild(li)
+				let li = document.createElement('div')
+				li.className = 'item'
+				let name_div = document.createElement('div')
+				name_div.className = 'name'
+				name_div.innerHTML = item.name
+				li.appendChild(name_div)
+				content.appendChild(li)
 				let download = document.createElement('button')
-				download.innerHTML = 'Download'
+				let download_div = document.createElement('div')
+				download_div.className = 'download'
+				download.innerHTML = '⇓'
 				download.onclick = () => {
 					let name = item.name
 					let new_name = name.replace(' ', '%20');
@@ -46,19 +54,24 @@ async function reload() {
 							a.click()
 						})
 				}
-				li.appendChild(download)
+				download_div.appendChild(download)
+				li.appendChild(download_div)
 				let remove = document.createElement('button')
-				remove.innerHTML = 'Remove'
+				let remove_div = document.createElement('div')
+				remove_div.className = 'remove'
+				remove.innerHTML = '⨯'
 				remove.onclick = () => {
 					let name = item.name
 					let new_name = name.replace(' ', '%20');
-					fetch(`/remove?name=${name}`, { method: 'POST' })
+					fetch(`/remove?name=${new_name}`, { method: 'POST' })
 						.then(() => {
 							reload()
 						})
 				}
-				li.appendChild(remove)
+				remove_div.appendChild(remove)
+				li.appendChild(remove_div)
 			})
+			list.appendChild(content)
 		})
 }
 
