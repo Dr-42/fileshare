@@ -8,7 +8,7 @@ async function reload() {
 		upload.onchange = () => {
 			let file = upload.files[0];
 			let name = file.name;
-			let progress_dialogue = document.getElementById('progress_dialogue')
+			let progress_dialogue = document.getElementById('progress-dialogue')
 			progress_dialogue.innerHTML = 'Uploading...'
 			progress_dialogue.showModal()
 			let Reader = new FileReader();
@@ -65,9 +65,15 @@ async function reload() {
 					const progressDiv = document.createElement('div');
 					progressDiv.appendChild(progressBar);
 
-					let progress_dialogue = document.getElementById('progress_dialogue')
+					let progress_dialogue = document.getElementById('progress-dialogue')
 					progress_dialogue.innerHTML = ''
+					let progress_text = document.createElement('div')
+					progress_text.innerHTML = 'Downloading...'
+					let progress_status = document.createElement('div')
+					progress_status.innerHTML = `${item.name} 0%`
+					progress_dialogue.appendChild(progress_text)
 					progress_dialogue.appendChild(progressDiv)
+					progress_dialogue.appendChild(progress_status)
 
 					progress_dialogue.showModal();
 					let reader = res.body.getReader();
@@ -94,6 +100,7 @@ async function reload() {
 						} else {
 							data = new Blob([data, value]);
 						}
+						progress_status.innerHTML = `${item.name} ${Math.round((downloadedSize / totalSize) * 100)}%`;
 						reader.read().then(processResult);
 					});
 				});
@@ -122,7 +129,7 @@ async function reload() {
 
 window.onload = () => {
 	let progress_dialogue = document.createElement('dialog')
-	progress_dialogue.id = 'progress_dialogue'
+	progress_dialogue.id = 'progress-dialogue'
 	document.body.appendChild(progress_dialogue)
 	reload()
 }
