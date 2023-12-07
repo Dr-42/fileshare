@@ -16,7 +16,6 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Serialize, Deserialize)]
 struct File {
-    id: u64,
     name: String,
     size: u64,
 }
@@ -24,15 +23,11 @@ struct File {
 #[derive(Serialize, Deserialize)]
 struct List {
     files: Vec<File>,
-    running_id: u64,
 }
 
 impl List {
     fn new() -> Self {
-        Self {
-            files: vec![],
-            running_id: 0,
-        }
+        Self { files: vec![] }
     }
 
     fn load(path: &str) -> Result<Self> {
@@ -44,11 +39,11 @@ impl List {
         self.files.push(file);
     }
 
-    async fn remove(&mut self, id: u64) {
-        async_fs::remove_file(format!("files/{}", self.files[id as usize].name))
+    async fn remove(&mut self, name: String) {
+        async_fs::remove_file(format!("files/{}", name))
             .await
             .unwrap();
-        self.files.retain(|f| f.id != id);
+        self.files.retain(|f| f.name != name);
     }
 }
 
@@ -141,13 +136,10 @@ async fn upload(State(state): State<Arc<Mutex<List>>>, body: Json<Upload>) -> im
         async_fs::write(format!("files/{}", body.name), bytes)
             .await
             .unwrap();
-        let id = state.running_id;
         state.add(File {
-            id,
             name: body.name.clone(),
             size: length as u64,
         });
-        state.running_id += 1;
         std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
     });
 
@@ -160,7 +152,7 @@ async fn upload(State(state): State<Arc<Mutex<List>>>, body: Json<Upload>) -> im
 
 #[derive(Deserialize)]
 struct FileQuery {
-    id: u64,
+    name: String,
 }
 
 #[axum_macros::debug_handler]
@@ -178,7 +170,7 @@ async fn remove(
                 .unwrap();
         }
         let mut state = state.unwrap();
-        state.remove(query.id).await;
+        state.remove(query.name.clone()).await;
         std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
     });
 
@@ -198,7 +190,7 @@ async fn file(State(state): State<Arc<Mutex<List>>>, query: Query<FileQuery>) ->
             .unwrap();
     }
     let state = state.unwrap();
-    let file = state.files.iter().find(|f| f.id == query.id);
+    let file = state.files.iter().find(|f| f.name == query.name);
     if file.is_none() {
         return Response::builder()
             .status(StatusCode::NOT_FOUND)

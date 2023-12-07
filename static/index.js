@@ -21,11 +21,9 @@ async function reload() {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: json_data
+					}).then(() => {
+						reload()
 					})
-						.then(res => res.json())
-						.then(_ => {
-							reload()
-						})
 				}
 			}
 			list.appendChild(upload)
@@ -37,7 +35,9 @@ async function reload() {
 				let download = document.createElement('button')
 				download.innerHTML = 'Download'
 				download.onclick = () => {
-					fetch(`/file?id=${item.id}`)
+					let name = item.name
+					let new_name = name.replace(' ', '%20');
+					fetch(`/file?name=${new_name}`)
 						.then(res => res.blob())
 						.then(blob => {
 							let a = document.createElement('a')
@@ -50,7 +50,9 @@ async function reload() {
 				let remove = document.createElement('button')
 				remove.innerHTML = 'Remove'
 				remove.onclick = () => {
-					fetch(`/remove?id=${item.id}`, { method: 'POST' })
+					let name = item.name
+					let new_name = name.replace(' ', '%20');
+					fetch(`/remove?name=${name}`, { method: 'POST' })
 						.then(() => {
 							reload()
 						})
