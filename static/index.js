@@ -9,27 +9,49 @@ async function reload() {
 			let file = upload.files[0];
 			let name = file.name;
 			let progress_dialogue = document.getElementById('progress-dialogue')
+			let progress_bar = document.createElement('progress')
+			progress_bar.id = 'progress-bar'
+			let progress_text = document.createElement('div')
+			progress_text.innerHTML = 'Uploading...'
 			progress_dialogue.innerHTML = 'Uploading...'
+			progress_dialogue.appendChild(progress_bar)
+			progress_dialogue.appendChild(progress_text)
 			progress_dialogue.showModal()
 			let Reader = new FileReader();
 			Reader.readAsDataURL(file);
+			let uploadedBytes = 0;
+			let chunkSize = 1024 * 1024 * 2; // 2MB
 			Reader.onload = () => {
-				let data = {
-					name: name,
-					data: Reader.result
-				}
-				let json_data = JSON.stringify(data)
+				const chunk = file.slice(uploadedBytes, uploadedBytes + chunkSize);
+				uploadedBytes += chunkSize;
+				let done = uploadedBytes >= file.size;
 				fetch('/upload', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: json_data
+					headers: {
+						'Content-Type': 'application/octet-stream',
+						'Content-Disposition': `attachment; filename="${name}"`,
+						'Content-Name': name,
+						'Content-Range': `bytes ${uploadedBytes - chunkSize}-${uploadedBytes}/${file.size}`,
+						'Content-Length': chunkSize,
+						'Content-Done': done,
+					},
+					body: chunk,
 				}).then(() => {
-					progress_dialogue.innerHTML = 'Upload complete!'
-					progress_dialogue.addEventListener('click', () => {
-						progress_dialogue.close()
-						reload()
-					})
-				})
+					const progress = Math.round((uploadedBytes / file.size) * 100);
+					progress_text.innerHTML = `Uploading... ${progress}%`;
+					document.getElementById('progress-bar').max = 100;
+					document.getElementById('progress-bar').value = progress;
+
+					if (!done) {
+						Reader.onload(); // Continue uploading next chunk
+					} else {
+						progress_dialogue.innerHTML = 'Upload complete!';
+						progress_dialogue.addEventListener('click', () => {
+							progress_dialogue.close();
+							reload();
+						});
+					}
+				});
 			}
 		}
 		list.appendChild(upload)

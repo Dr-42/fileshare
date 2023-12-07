@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use axum::{
-    body::{self, Body, Full},
+    body::{self, Body, Bytes, Full},
     extract::{DefaultBodyLimit, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -23,11 +23,15 @@ struct File {
 #[derive(Serialize, Deserialize)]
 struct List {
     files: Vec<File>,
+    temp: Vec<u8>,
 }
 
 impl List {
     fn new() -> Self {
-        Self { files: vec![] }
+        Self {
+            files: vec![],
+            temp: vec![],
+        }
     }
 
     fn load(path: &str) -> Result<Self> {
@@ -75,7 +79,7 @@ async fn main() -> Result<()> {
         .route("/remove", post(remove))
         .route("/file", get(file))
         .layer(CorsLayer::permissive())
-        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024));
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024 * 1024));
     let router_service = routes.with_state(state).into_make_service();
     axum::Server::bind(&ip.parse()?)
         .serve(router_service)
@@ -108,42 +112,50 @@ async fn list(State(state): State<Arc<Mutex<List>>>) -> impl IntoResponse {
         .unwrap()
 }
 
-#[derive(Serialize, Deserialize)]
-struct Upload {
-    name: String,
-    data: String,
-}
-
+// content application/octet-stream
 #[axum_macros::debug_handler]
-async fn upload(State(state): State<Arc<Mutex<List>>>, body: Json<Upload>) -> impl IntoResponse {
-    let data = &body.data;
-    let data = data.split(',').nth(1).unwrap();
+async fn upload(
+    State(state): State<Arc<Mutex<List>>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    let data = &body;
     // Decode Base64 data
-    use base64::{engine::general_purpose, Engine as _};
-
-    let bytes = general_purpose::STANDARD.decode(data).unwrap();
-    let length = bytes.len();
     let state: Arc<Mutex<List>> = Arc::clone(&state);
-    let handle = tokio::spawn(async move {
-        let state = state.try_lock();
-        if state.is_err() {
-            Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .body(Body::empty())
-                .unwrap();
-        }
-        let mut state = state.unwrap();
-        async_fs::write(format!("files/{}", body.name), bytes)
-            .await
+    let state = state.try_lock();
+    if state.is_err() {
+        Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::empty())
             .unwrap();
-        state.add(File {
-            name: body.name.clone(),
-            size: length as u64,
-        });
-        std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
+    }
+    let mut state = state.unwrap();
+    let content_done = headers
+        .get("Content-Done")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<bool>()
+        .unwrap();
+    if !content_done {
+        state.temp.extend(data);
+        return Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::empty())
+            .unwrap();
+    }
+    let name = headers.get("Content-Name").unwrap().to_str().unwrap();
+    async_fs::write(format!("files/{}", name), state.temp.clone())
+        .await
+        .unwrap();
+    let length = state.temp.len();
+    state.temp.clear();
+    state.add(File {
+        name: name.to_string(),
+        size: length as u64,
     });
+    std::fs::write("list.json", serde_json::to_string(&*state).unwrap()).unwrap();
 
-    handle.await.unwrap();
     Response::builder()
         .status(StatusCode::OK)
         .body(Body::empty())
