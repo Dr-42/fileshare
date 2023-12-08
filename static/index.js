@@ -1,22 +1,22 @@
 async function reload() {
 	fetch('/list').then(async serdata => {
-		let data = await serdata.json()
-		let list = document.getElementById('main-content')
-		list.innerHTML = ''
-		let upload = document.createElement('input')
-		upload.type = 'file'
+		let data = await serdata.json();
+		let list = document.getElementById('main-content');
+		list.innerHTML = '';
+		let upload = document.createElement('input');
+		upload.type = 'file';
 		upload.onchange = () => {
 			let file = upload.files[0];
 			let name = file.name;
-			let progress_dialogue = document.getElementById('progress-dialogue')
-			let progress_bar = document.createElement('progress')
-			progress_bar.id = 'progress-bar'
-			let progress_text = document.createElement('div')
-			progress_text.innerHTML = 'Uploading...'
-			progress_dialogue.innerHTML = 'Uploading...'
-			progress_dialogue.appendChild(progress_bar)
-			progress_dialogue.appendChild(progress_text)
-			progress_dialogue.showModal()
+			let progress_dialogue = document.getElementById('progress-dialogue');
+			let progress_bar = document.createElement('progress');
+			progress_bar.id = 'progress-bar';
+			let progress_text = document.createElement('div');
+			progress_text.innerHTML = `${name} ...`;
+			progress_dialogue.innerHTML = 'Uploading...';
+			progress_dialogue.appendChild(progress_bar);
+			progress_dialogue.appendChild(progress_text);
+			progress_dialogue.showModal();
 			let Reader = new FileReader();
 			Reader.readAsDataURL(file);
 			let uploadedBytes = 0;
@@ -54,25 +54,20 @@ async function reload() {
 				});
 			}
 		}
-		list.appendChild(upload)
-		console.log(data)
+		list.appendChild(upload);
+		console.log(data);
 
-		let content = document.createElement('div')
-		content.className = 'holder'
+		let content = document.createElement('div');
+		content.className = 'holder';
 		data.files.forEach(item => {
-			let li = document.createElement('div')
-			li.className = 'item'
-			let name_div = document.createElement('div')
-			name_div.className = 'name'
-			name_div.innerHTML = item.name
-			li.appendChild(name_div)
-			content.appendChild(li)
-			let download = document.createElement('button');
-			let download_div = document.createElement('div');
-			download_div.className = 'download';
-			download.innerHTML = '⇓';
-
-			download.onclick = () => {
+			let li = document.createElement('div');
+			li.className = 'item';
+			let name_div = document.createElement('div');
+			name_div.className = 'name';
+			name_div.innerHTML = item.name;
+			li.appendChild(name_div);
+			content.appendChild(li);
+			li.onclick = () => {
 				let name = item.name;
 				let new_name = name.replace(' ', '%20');
 
@@ -87,15 +82,15 @@ async function reload() {
 					const progressDiv = document.createElement('div');
 					progressDiv.appendChild(progressBar);
 
-					let progress_dialogue = document.getElementById('progress-dialogue')
-					progress_dialogue.innerHTML = ''
-					let progress_text = document.createElement('div')
-					progress_text.innerHTML = 'Downloading...'
-					let progress_status = document.createElement('div')
-					progress_status.innerHTML = `${item.name} 0%`
-					progress_dialogue.appendChild(progress_text)
-					progress_dialogue.appendChild(progressDiv)
-					progress_dialogue.appendChild(progress_status)
+					let progress_dialogue = document.getElementById('progress-dialogue');
+					progress_dialogue.innerHTML = '';
+					let progress_text = document.createElement('div');
+					progress_text.innerHTML = 'Downloading...';
+					let progress_status = document.createElement('div');
+					progress_status.innerHTML = `${item.name} 0%`;
+					progress_dialogue.appendChild(progress_text);
+					progress_dialogue.appendChild(progressDiv);
+					progress_dialogue.appendChild(progress_status);
 
 					progress_dialogue.showModal();
 					let reader = res.body.getReader();
@@ -127,26 +122,23 @@ async function reload() {
 					});
 				});
 			};
-
-			download_div.appendChild(download);
-			li.appendChild(download_div);
-			let remove = document.createElement('button')
-			let remove_div = document.createElement('div')
-			remove_div.className = 'remove'
-			remove.innerHTML = '⨯'
+			let remove = document.createElement('button');
+			let remove_div = document.createElement('div');
+			remove_div.className = 'remove';
+			remove.innerHTML = '⨯';
 			remove.onclick = () => {
-				let name = item.name
+				let name = item.name;
 				let new_name = name.replace(' ', '%20');
 				fetch(`/remove?name=${new_name}`, { method: 'POST' })
 					.then(() => {
-						reload()
+						reload();
 					})
 			}
-			remove_div.appendChild(remove)
-			li.appendChild(remove_div)
-		})
-		list.appendChild(content)
-	})
+			remove_div.appendChild(remove);
+			li.appendChild(remove_div);
+		});
+		list.appendChild(content);
+	});
 }
 
 window.onload = () => {
