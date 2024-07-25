@@ -120,6 +120,7 @@ async fn upload(
     body: Bytes,
 ) -> impl IntoResponse {
     let data = &body;
+    println!("Data received: {}", data.len());
     // Decode Base64 data
     let state: Arc<Mutex<List>> = Arc::clone(&state);
     let state = state.try_lock();
@@ -130,6 +131,7 @@ async fn upload(
             .unwrap();
     }
     let mut state = state.unwrap();
+    state.temp.extend(data);
     let content_done = headers
         .get("Content-Done")
         .unwrap()
@@ -138,7 +140,6 @@ async fn upload(
         .parse::<bool>()
         .unwrap();
     if !content_done {
-        state.temp.extend(data);
         return Response::builder()
             .status(StatusCode::OK)
             .body(Body::empty())

@@ -22,9 +22,11 @@ async function reload() {
 			let uploadedBytes = 0;
 			let chunkSize = 1024 * 1024 * 2; // 2MB
 			Reader.onload = () => {
-				const chunk = file.slice(uploadedBytes, uploadedBytes + chunkSize);
-				uploadedBytes += chunkSize;
-				let done = uploadedBytes >= file.size;
+				let remainingBytes = file.size - uploadedBytes;
+				let toUpload = remainingBytes > chunkSize ? chunkSize : remainingBytes;
+				const chunk = file.slice(uploadedBytes, uploadedBytes + toUpload);
+				uploadedBytes += toUpload;
+				console.log(`Chunk_size: ${chunk.size} ToUpload: ${toUpload} Uploaded: ${uploadedBytes} Total: ${file.size}`);
 				fetch('/upload', {
 					method: 'POST',
 					headers: {
@@ -32,8 +34,8 @@ async function reload() {
 						'Content-Disposition': `attachment; filename="${name}"`,
 						'Content-Name': name,
 						'Content-Range': `bytes ${uploadedBytes - chunkSize}-${uploadedBytes}/${file.size}`,
-						'Content-Length': chunkSize,
-						'Content-Done': done,
+						'Content-Length': toUpload,
+						'Content-Done': uploadedBytes >= file.size,
 					},
 					body: chunk,
 				}).then(() => {
@@ -42,7 +44,7 @@ async function reload() {
 					document.getElementById('progress-bar').max = 100;
 					document.getElementById('progress-bar').value = progress;
 
-					if (!done) {
+					if (uploadedBytes < file.size) {
 						Reader.onload(); // Continue uploading next chunk
 					} else {
 						progress_dialogue.innerHTML = 'Upload complete!';
